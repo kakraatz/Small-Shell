@@ -18,21 +18,28 @@ void builtin_commands(char* args[]);
 //void other_commands(char* args[]);
 
 int main() {
-  char* input[512];
+  struct input{
+    char *args[512];
+    char *in_file;
+    char *out_file;
+  };
+
+  struct input *inp = malloc(sizeof *inp);
   
   // signal_handler();
 
   for (;;) {
-    parse_input(input);
+    parse_input(inp->args);
+    printf("Input args[0] = %s\n", inp->args[0]);
     
-    if (input[0] == NULL || input[0][0] == '#') {
+    if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
     }
 
-    if (strcmp(input[0], "exit") == 0 || strcmp(input[0], "cd") == 0 || strcmp(input[0], "status") == 0) {
-      printf("Should go to builtin_commands, input[0] = %s\n", input[0]);
+    if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
+      printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
       fflush(stdout);
-      builtin_commands(input);
+      builtin_commands(inp->args);
     }
 
     else {
@@ -45,7 +52,7 @@ int main() {
 }
 
 
-void parse_input(char* args[]) {
+void parse_input(char *args[512]) {
   char input[2048];
 
   printf(": ");
@@ -53,14 +60,24 @@ void parse_input(char* args[]) {
   fgets(input, 2048, stdin);
 
   int length = strlen(input);
-  //printf("input[length] = %c, ", input[length-2]);
+  //if (length == 1) {
+    //args[0] = NULL;
+    //return;
+  //}
+  //printf("input length = %d", length);
+  //printf("input[length-1] = %c, ", input[length-1]);
   input[length - 1] = '\0';
+  //printf("should be null = %c", input[length - 1]);
 
   char *token;
   token = strtok(input, " ");
-  //printf("token = %s", token);
+  if (token == NULL) {
+    args[0] = NULL;
+    return;
+  }
+  printf("token = %s\n", token);
 
-  args[0] = token;
+  args[0] = strdup(token);
 }
 
 void builtin_commands(char* args[]) {
