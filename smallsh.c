@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <fcntl.h>
 
 
 void parse_input(char* args[]);
@@ -30,21 +31,21 @@ int main() {
 
   for (;;) {
     parse_input(inp->args);
-    printf("Input args[0] = %s\n", inp->args[0]);
+    //printf("Input args[0] = %s\n", inp->args[0]);
     
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
     }
 
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
-      printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
-      fflush(stdout);
+      //printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
+      //fflush(stdout);
       builtin_commands(inp->args);
     }
 
     else {
-      printf("Should fork to exec() here.\n");
-      fflush(stdout);
+      //printf("Should fork to exec() here.\n");
+      //fflush(stdout);
       //other_commands(input);
     }
   }
@@ -75,9 +76,14 @@ void parse_input(char *args[512]) {
     args[0] = NULL;
     return;
   }
-  printf("token = %s\n", token);
-
-  args[0] = strdup(token);
+  //printf("token = %s\n", token);
+  
+  int i;
+  for (i = 0; token; ++i) {
+    args[i] = strdup(token);
+    printf("token is: %s\n", token);
+    token = strtok(NULL, " ");
+  }
 }
 
 void builtin_commands(char* args[]) {
@@ -85,11 +91,22 @@ void builtin_commands(char* args[]) {
   if (strcmp(args[0], "exit") == 0) {
     printf("Should exit here.\n");
     fflush(stdout);
+
   }
 
   else if (strcmp(args[0], "cd") == 0) {
     printf("Should cd here.\n");
     fflush(stdout);
+    if (!args[1]) {
+      printf("cd'ing to home\n");
+      chdir(getenv("HOME"));
+      printf("cd'd to home\n");
+    }
+    else {
+      printf("cd'ing to %s\n", args[1]);
+      chdir(args[1]);
+      printf("cd'd to %s\n", args[1]);
+    }
   }
 
   else if (strcmp(args[0], "status") == 0) {
