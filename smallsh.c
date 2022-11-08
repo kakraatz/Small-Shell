@@ -17,6 +17,9 @@
 void parse_input(char* args[]);
 void builtin_commands(char* args[]);
 //void other_commands(char* args[]);
+//void signal_handler();
+//void add_process();
+//int process_count();
 
 int main() {
   struct input{
@@ -27,22 +30,28 @@ int main() {
 
   struct input *inp = malloc(sizeof *inp);
   
-  // signal_handler();
+  //signal_handler();
 
   for (;;) {
+    // clear out the last input
+    memset(inp, 0, sizeof(*inp));
+    // send input to get tokenized
     parse_input(inp->args);
-    //printf("Input args[0] = %s\n", inp->args[0]);
-    
+    int i;
+    for (i = 0; inp->args[i] != NULL; ++i) {
+      printf("Input args = %s\n", inp->args[i]);
+    }
+    // do nothing for blank argument or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
     }
-
+    // if command is exit, cd, or status, send it to built-in commands
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
       //printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
       //fflush(stdout);
       builtin_commands(inp->args);
     }
-
+    // everything else gets forked
     else {
       //printf("Should fork to exec() here.\n");
       //fflush(stdout);
@@ -118,6 +127,12 @@ void builtin_commands(char* args[]) {
 //void other_commands(char* args[]) {
 //}
 
-// void signal_handler() {
+//void signal_handler() {
+//}
+
+//void add_process() {
+//}
+
+//int process_count() {
 //}
 }
