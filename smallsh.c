@@ -34,7 +34,7 @@ int main() {
   for (;;) {
     // clear out the last input
     memset(inp, 0, sizeof(*inp));
-    // send input to get tokenized
+    // send input to get tokenized into separate args
     parse_input(inp->args);
     int i;
     for (i = 0; inp->args[i] != NULL; ++i) {
@@ -42,29 +42,27 @@ int main() {
     }
 
     for (i = 0; inp->args[i] != NULL; ++i) {
+      // find < in the args and denote the next argument as input file
       if (strcmp(inp->args[i], "<") == 0) {
         inp->in_file = inp->args[i + 1];
-        printf("in file is: %s\n", inp->in_file);
+        //printf("in file is: %s\n", inp->in_file);
       }
+      // find > in the args and denote the next argument as output file
       else if (strcmp(inp->args[i], ">") == 0) {
         inp->out_file = inp->args[i + 1];
-        printf("out file is: %s\n", inp->out_file);
+        //printf("out file is: %s\n", inp->out_file);
       }
     }
-    // do nothing for blank argument or a comment
+    // do nothing for blank input or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
     }
-    // if command is exit, cd, or status, send it to built-in commands
+    // if command is exit, cd, or status, go to built-in commands
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
-      //printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
-      //fflush(stdout);
       builtin_commands(inp->args, inp->in_file, inp->out_file);
     }
     // everything else gets forked
     else {
-      //printf("Should fork to exec() here.\n");
-      //fflush(stdout);
       //other_commands(inp->args, inp->in_file, inp->out_file);
     }
   }
@@ -81,20 +79,10 @@ void parse_input(char *args[512]) {
   fgets(input, 2048, stdin);
 
   int length = strlen(input);
-  //if (length == 1) {
-    //args[0] = NULL;
-    //return;
-  //}
-  //printf("input length = %d", length);
-  //printf("input[length-1] = %c, ", input[length-1]);
   input[length - 1] = '\0';
-  //printf("should be null = %c", input[length - 1]);
+
   char pid[2048 - length];
   sprintf(pid, "%d", getpid());
-  //process_list(1234);
-  //process_list(6374);
-  //process_list(4444);
-
 
   char *token;
   token = strtok(input, " ");
@@ -102,7 +90,6 @@ void parse_input(char *args[512]) {
     args[0] = NULL;
     return;
   }
-  //printf("token = %s\n", token);
   for (i = 0; token; ++i) {
     args[i] = strdup(token);
     if (args[i][0] == '$' && args[i][1] == '$') {
@@ -116,14 +103,12 @@ void parse_input(char *args[512]) {
 void builtin_commands(char *args[], char *in_file, char *out_file) {
   // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
-    //printf("Should exit here.\n");
-    //fflush(stdout);
     int i;
     // get the list of all pid's
     int *processes = process_list(0);
     // kill em all
     for (i = 0; processes[i] != 0 ; ++i) {
-      printf("killing process id: %d\n", processes[i]);
+      //printf("killing process id: %d\n", processes[i]);
       kill(processes[i], SIGTERM);
     }
     // clean exit after any/all processes are killed
@@ -132,17 +117,13 @@ void builtin_commands(char *args[], char *in_file, char *out_file) {
   
   // cd built-in command
   else if (strcmp(args[0], "cd") == 0) {
-    //printf("Should cd here.\n");
-    //fflush(stdout);
+    // if no argument/directory after cd, chdir to home
     if (!args[1]) {
-      //printf("cd'ing to home\n");
       chdir(getenv("HOME"));
-      //printf("cd'd to home\n");
     }
+    // otherwise, cd to the given directory
     else {
-      //printf("cd'ing to %s\n", args[1]);
       chdir(args[1]);
-      //printf("cd'd to %s\n", args[1]);
     }
   }
   
