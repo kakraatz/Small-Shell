@@ -18,7 +18,7 @@ void parse_input(char *args[]);
 void builtin_commands(char* args[], char *in_file, char *out_file);
 //void other_commands(char* args[]);
 //void signal_handler();
-//char process_list();
+int *process_list(pid_t pid);
 
 int main() {
   struct input{
@@ -91,6 +91,10 @@ void parse_input(char *args[512]) {
   //printf("should be null = %c", input[length - 1]);
   char pid[2048 - length];
   sprintf(pid, "%d", getpid());
+  //process_list(1234);
+  //process_list(6374);
+  //process_list(4444);
+
 
   char *token;
   token = strtok(input, " ");
@@ -110,37 +114,45 @@ void parse_input(char *args[512]) {
 }
 
 void builtin_commands(char *args[], char *in_file, char *out_file) {
-  /* if the first argument is exit, run exit built-in command */
+  // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
-    printf("Should exit here.\n");
-    fflush(stdout);
+    //printf("Should exit here.\n");
+    //fflush(stdout);
     int i;
-    //char processes = process_list(0);
-    //for (i = 0; processes != 0 ; ++i) {
-      //kill(processes[i], SIGTERM);
-    //}
-  }
-
+    // get the list of all pid's
+    int *processes = process_list(0);
+    // kill em all
+    for (i = 0; processes[i] != 0 ; ++i) {
+      printf("killing process id: %d\n", processes[i]);
+      kill(processes[i], SIGTERM);
+    }
+    // clean exit after any/all processes are killed
+    exit(0);
+    }
+  
+  // cd built-in command
   else if (strcmp(args[0], "cd") == 0) {
-    printf("Should cd here.\n");
-    fflush(stdout);
+    //printf("Should cd here.\n");
+    //fflush(stdout);
     if (!args[1]) {
-      printf("cd'ing to home\n");
+      //printf("cd'ing to home\n");
       chdir(getenv("HOME"));
-      printf("cd'd to home\n");
+      //printf("cd'd to home\n");
     }
     else {
-      printf("cd'ing to %s\n", args[1]);
+      //printf("cd'ing to %s\n", args[1]);
       chdir(args[1]);
-      printf("cd'd to %s\n", args[1]);
+      //printf("cd'd to %s\n", args[1]);
     }
   }
-
+  
+  // status built-in commmand
   else if (strcmp(args[0], "status") == 0) {
     printf("Should print exit status here.\n");
     fflush(stdout);
   }
 }
+
 
 
 //void other_commands(char* args[]) {
@@ -149,5 +161,11 @@ void builtin_commands(char *args[], char *in_file, char *out_file) {
 //void signal_handler() {
 //}
 
-//char process_list() {
-//}
+int *process_list(pid_t pid) {
+  static int list[2];
+  static int count = 0;
+  // add the pid to the list, increment pid counter, spit back the list
+  list[count] = pid;
+  ++count;
+  return list;
+}
