@@ -14,8 +14,8 @@
 #include <fcntl.h>
 
 
-void parse_input(char* args[]);
-void builtin_commands(char* args[]);
+void parse_input(char *args[]);
+void builtin_commands(char* args[], char *in_file, char *out_file);
 //void other_commands(char* args[]);
 //void signal_handler();
 //char process_list();
@@ -40,6 +40,15 @@ int main() {
     for (i = 0; inp->args[i] != NULL; ++i) {
       printf("Input args = %s\n", inp->args[i]);
     }
+
+    for (i = 0; inp->args[i] != NULL; ++i) {
+      if (strcmp(inp->args[i], "<") == 0) {
+        inp->in_file = inp->args[i + 1];
+      }
+      else if (strcmp(inp->args[i], ">") == 0) {
+        inp->out_file = inp->args[i + 1];
+      }
+    }
     // do nothing for blank argument or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
@@ -48,13 +57,13 @@ int main() {
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
       //printf("Should go to builtin_commands, input[0] = %s\n", inp->args[0]);
       //fflush(stdout);
-      builtin_commands(inp->args);
+      builtin_commands(inp->args, inp->in_file, inp->out_file);
     }
     // everything else gets forked
     else {
       //printf("Should fork to exec() here.\n");
       //fflush(stdout);
-      //other_commands(input);
+      //other_commands(inp->args, inp->in_file, inp->out_file);
     }
   }
   return 0;
@@ -63,6 +72,8 @@ int main() {
 
 void parse_input(char *args[512]) {
   char input[2048];
+  pid_t pid = getpid();
+  int i;
 
   printf(": ");
   fflush(stdout);
@@ -85,16 +96,17 @@ void parse_input(char *args[512]) {
     return;
   }
   //printf("token = %s\n", token);
-  
-  int i;
   for (i = 0; token; ++i) {
     args[i] = strdup(token);
+    if (args[i][0] == '$' && args[i][1] == '$') {
+      args[i] = pid;
+    }
     printf("token is: %s\n", token);
     token = strtok(NULL, " ");
   }
 }
 
-void builtin_commands(char* args[]) {
+void builtin_commands(char *args[], char *in_file, char *out_file) {
   /* if the first argument is exit, run exit built-in command */
   if (strcmp(args[0], "exit") == 0) {
     printf("Should exit here.\n");
