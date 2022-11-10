@@ -44,9 +44,11 @@ int main() {
     for (i = 0; inp->args[i] != NULL; ++i) {
       if (strcmp(inp->args[i], "<") == 0) {
         inp->in_file = inp->args[i + 1];
+        printf("in file is: %s\n", inp->in_file);
       }
       else if (strcmp(inp->args[i], ">") == 0) {
         inp->out_file = inp->args[i + 1];
+        printf("out file is: %s\n", inp->out_file);
       }
     }
     // do nothing for blank argument or a comment
@@ -72,7 +74,6 @@ int main() {
 
 void parse_input(char *args[512]) {
   char input[2048];
-  pid_t pid = getpid();
   int i;
 
   printf(": ");
@@ -88,6 +89,8 @@ void parse_input(char *args[512]) {
   //printf("input[length-1] = %c, ", input[length-1]);
   input[length - 1] = '\0';
   //printf("should be null = %c", input[length - 1]);
+  char pid[2048 - length];
+  sprintf(pid, "%d", getpid());
 
   char *token;
   token = strtok(input, " ");
