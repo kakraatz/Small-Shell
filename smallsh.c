@@ -17,7 +17,9 @@
 void parse_input(char *args[]);
 void builtin_commands(char* args[]);
 void other_commands(char* args[], char *in_file, char *out_file, int bg);
-//void signal_handler();
+void handle_SIGINT();
+void handle_SIGTSTP();
+void check_background();
 int exit_status(int status);
 int *process_list(pid_t pid);
 
@@ -31,7 +33,10 @@ int main() {
 
   struct input *inp = malloc(sizeof *inp);
   
-  //signal_handler();
+  // ctrl-C handler, ignores ctrl-C for parent/bg children
+  handle_SIGINT();
+  // ctrl-Z handler, controls foreground-only mode
+  handle_SIGTSTP();
 
   for (;;) {
     // clear out the last input
@@ -141,18 +146,47 @@ void builtin_commands(char *args[]) {
 }
 
 void other_commands(char *args[], char *in_file, char *out_file, int bg) {
-  printf("Starting other command\n");
-  int i;
-  for (i = 0; args[i] != NULL; ++i) {
-    printf("argument %d: %s\n", i, args[i]);
-  }
-  printf("In-file is: %s\n", in_file);
-  printf("Out-file is: %s\n", out_file);
-  printf("Background flag is: %d\n", bg);
+  //printf("Starting other command\n");
+  //int i;
+  //for (i = 0; args[i] != NULL; ++i) {
+    //printf("argument %d: %s\n", i, args[i]);
+  //}
+  //printf("In-file is: %s\n", in_file);
+  //printf("Out-file is: %s\n", out_file);
+  //printf("Background flag is: %d\n", bg);
+  // this is pretty much straight from the course modules
+  
 }
 
-//void signal_handler() {
-//}
+void handle_SIGINT() {
+  // initialize SIGINT_action to empty
+  struct sigaction SIGINT_action = {0};
+  // register SIG_IGN as signal handler, ctrl-C is ignored
+  SIGINT_action.sa_handler = SIG_IGN;
+  // block catchable signals while running
+  sigfillset(&SIGINT_action.sa_mask);
+  // no flags set
+  SIGINT_action.sa_flags = 0;
+  // install the signal handler
+  sigaction(SIGINT, &SIGINT_action, NULL);
+}
+
+void handle_SIGTSTP() {
+  // initialize SIGTSTP_action to empty
+  struct sigaction SIGTSTP_action = {0};
+  // register check_background as handler, need to check bg status
+  SIGTSTP_action.sa_handler = check_background;
+  // block catchable signals while running
+  sigfillset(&SIGTSTP_action.sa_mask);
+  // no flags set
+  SIGTSTP_action.sa_flags = 0;
+  // install the signal handler
+  sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+}
+
+void check_background() {
+   
+}
 
 int exit_status(int status) {
   int exit_value = 0;
