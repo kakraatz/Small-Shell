@@ -15,9 +15,10 @@
 
 
 void parse_input(char *args[]);
-void builtin_commands(char* args[], char *in_file, char *out_file);
-//void other_commands(char* args[]);
+void builtin_commands(char* args[]);
+void other_commands(char* args[], char *in_file, char *out_file, int bg);
 //void signal_handler();
+int exit_status(int status);
 int *process_list(pid_t pid);
 
 int main() {
@@ -25,6 +26,7 @@ int main() {
     char *args[512];
     char *in_file;
     char *out_file;
+    int bg;
   };
 
   struct input *inp = malloc(sizeof *inp);
@@ -36,11 +38,9 @@ int main() {
     memset(inp, 0, sizeof(*inp));
     // send input to get tokenized into separate args
     parse_input(inp->args);
-    int i;
-    for (i = 0; inp->args[i] != NULL; ++i) {
-      printf("Input args = %s\n", inp->args[i]);
-    }
 
+    inp->bg = 0;
+    int i;
     for (i = 0; inp->args[i] != NULL; ++i) {
       // find < in the args and denote the next argument as input file
       if (strcmp(inp->args[i], "<") == 0) {
@@ -52,18 +52,23 @@ int main() {
         inp->out_file = inp->args[i + 1];
         //printf("out file is: %s\n", inp->out_file);
       }
+      // find & and flag as background process
+      else if (strcmp(inp->args[i], "&") == 0) {
+        inp->bg = 1;
+      }
     }
+    //printf("bg value is: %d\n", inp->bg);
     // do nothing for blank input or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
     }
     // if command is exit, cd, or status, go to built-in commands
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
-      builtin_commands(inp->args, inp->in_file, inp->out_file);
+      builtin_commands(inp->args);
     }
     // everything else gets forked
     else {
-      //other_commands(inp->args, inp->in_file, inp->out_file);
+      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg);
     }
   }
   return 0;
@@ -95,12 +100,12 @@ void parse_input(char *args[512]) {
     if (args[i][0] == '$' && args[i][1] == '$') {
       args[i] = pid;
     }
-    printf("token is: %s\n", token);
+    //printf("token is: %s\n", token);
     token = strtok(NULL, " ");
   }
 }
 
-void builtin_commands(char *args[], char *in_file, char *out_file) {
+void builtin_commands(char *args[]) {
   // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
     int i;
@@ -131,16 +136,28 @@ void builtin_commands(char *args[], char *in_file, char *out_file) {
   else if (strcmp(args[0], "status") == 0) {
     printf("Should print exit status here.\n");
     fflush(stdout);
+
   }
 }
 
-
-
-//void other_commands(char* args[]) {
-//}
+void other_commands(char *args[], char *in_file, char *out_file, int bg) {
+  printf("Starting other command\n");
+  int i;
+  for (i = 0; args[i] != NULL; ++i) {
+    printf("argument %d: %s\n", i, args[i]);
+  }
+  printf("In-file is: %s\n", in_file);
+  printf("Out-file is: %s\n", out_file);
+  printf("Background flag is: %d\n", bg);
+}
 
 //void signal_handler() {
 //}
+
+int exit_status(int status) {
+  int exit_value = 0;
+  return exit_value;
+}
 
 int *process_list(pid_t pid) {
   static int list[2];
