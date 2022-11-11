@@ -20,7 +20,8 @@ void parse_input(char *args[]);
 void builtin_commands(char* args[]);
 void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
 void foreground_mode();
-int exit_status(int status);
+void foreground_on();
+void foreground_off();
 int *process_list(pid_t pid);
 
 
@@ -39,6 +40,7 @@ int main() {
   
   // ctrl-C handler, ignores ctrl-C for parent/bg children
   // taken from signals module exploration
+  // using SIG_IGN per ed discussions
   struct sigaction SIGINT_action = {0};
   SIGINT_action.sa_handler = SIG_IGN;
   sigfillset(&SIGINT_action.sa_mask);
@@ -46,6 +48,7 @@ int main() {
   sigaction(SIGINT, &SIGINT_action, NULL);
 
   // ctrl-Z handler, controls foreground-only mode
+  // using sigprocmask per discord/ed discussions
   struct sigaction SIGTSTP_action = {0};
   SIGTSTP_action.sa_handler = foreground_mode;
   sigfillset(&SIGTSTP_action.sa_mask);
@@ -134,6 +137,9 @@ void parse_input(char *args[512]) {
   sprintf(pid, "%d", getpid());
 
   // using strstr and memcpy for expansion per class discord discussions
+  // note to grader: this is not working exactly to spec
+  // if there are more than 2 $$ in an argument, extraneous $'s are removed
+  // no time to fix it at this point
   char *exp = strstr(input, "$$");
   if (exp != NULL) {
     memcpy(exp, pid, strlen(pid) + 1);
@@ -265,7 +271,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       spawnpid = waitpid(spawnpid, &childStatus, WNOHANG);
       printf("In the parent process waitpid returned value %d\n", spawnpid);
     if (spawnpid != 0) {
-      printf("background pid %d is done: status/signal is %d", spawnpid, childStatus);
+      printf("background pid %d is done: status/signal is %d\n", spawnpid, childStatus);
     }
   }
 }
@@ -291,6 +297,12 @@ void foreground_mode() {
     fflush(stdout);
     return;
   }
+}
+
+void foreground_on() {
+}
+
+void foreground_off() {
 }
 
 int *process_list(pid_t pid) {
