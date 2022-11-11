@@ -17,12 +17,11 @@
 void parse_input(char *args[]);
 void builtin_commands(char* args[]);
 void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
-void child_process();
-void handle_SIGINT();
-void handle_SIGTSTP();
-void foreground_mode();
+void foreground_mode(int fg_mode);
 int exit_status(int status);
 int *process_list(pid_t pid);
+
+int fg_mode = 0;
 
 int main() {
   struct input{
@@ -36,27 +35,17 @@ int main() {
   
   // ctrl-C handler, ignores ctrl-C for parent/bg children
   // taken from signals module exploration
-  // initialize SIGINT_action to empty
   struct sigaction SIGINT_action = {0};
-  // register SIG_IGN as signal handler, ctrl-C is ignored
   SIGINT_action.sa_handler = SIG_IGN;
-  // block catchable signals while running
   sigfillset(&SIGINT_action.sa_mask);
-  // no flags set
   SIGINT_action.sa_flags = 0;
-  // install the signal handler
   sigaction(SIGINT, &SIGINT_action, NULL);
 
   // ctrl-Z handler, controls foreground-only mode
-  // initialize SIGTSTP_action to empty
   struct sigaction SIGTSTP_action = {0};
-  // register check_background as handler, need to check fg status
   SIGTSTP_action.sa_handler = foreground_mode;
-  // block catchable signals while running
   sigfillset(&SIGTSTP_action.sa_mask);
-  // no flags set
   SIGTSTP_action.sa_flags = 0;
-  // install the signal handler
   sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
   for (;;) {
@@ -64,15 +53,22 @@ int main() {
     memset(inp, 0, sizeof(*inp));
     //printf(": ");
     fflush(stdout);
-    // send input to get tokenized into separate args
+
+    // input gets tokenized into separate args
     parse_input(inp->args);
 
+    // background value initialized to 0
+    // bg is 1 if & was the last argument
     inp->bg = 0;
+
+    // loop through the parsed arguments
     int i;
     for (i = 0; inp->args[i] != NULL; ++i) {
       // find < in the args and denote the next argument as input file
       if (strcmp(inp->args[i], "<") == 0) {
         inp->in_file = inp->args[i + 1];
+
+        // null the < and in_file after in_file has been set
         inp->args[i] = NULL;
         inp->args[i + 1] = NULL;
         //printf("in file is: %s\n", inp->in_file);
@@ -80,17 +76,18 @@ int main() {
       // find > in the args and denote the next argument as output file
       else if (strcmp(inp->args[i], ">") == 0) {
         inp->out_file = inp->args[i + 1];
+
+        // null > and out_file after out_file has been set
         inp->args[i] = NULL;
         inp->args[i + 1] = NULL;
-        //printf("out file is: %s\n", inp->out_file);
       }
-      // find & and flag as background process
+      // if & is found, flag as background process/set bg to 1
       else if (strcmp(inp->args[i], "&") == 0) {
         inp->bg = 1;
+        // null & after flagging as bg process
         inp->args[i] = NULL;
       }
     }
-    //printf("bg value is: %d\n", inp->bg);
     // do nothing for blank input or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
@@ -111,35 +108,41 @@ int main() {
 void parse_input(char *args[512]) {
   char input[2048];
   int i;
-
+  // print the input indicator and flush
   printf(": ");
   fflush(stdout);
+
+  // using fgets per discord discussion
+  // fgets collects stdin into input array
   fgets(input, 2048, stdin);
 
+  // get the input length and set the last index character to \0 from \n
   int length = strlen(input);
   input[length - 1] = '\0';
 
+  // convert the pid into a str using sprintf
   char pid[2048 - length];
   sprintf(pid, "%d", getpid());
-  //printf("pid is %s\n", pid);
 
+  // using strstr and memcpy for expansion per discord discussions
+  char *exp = strstr(input, "$$");
+  if (exp != NULL) {
+    memcpy(exp, pid, strlen(pid) + 1);
+  }
+
+  // tokenize the input into individual arguments
   char *token;
   token = strtok(input, " ");
+
+  // if input is blank, just return
   if (token == NULL) {
     args[0] = NULL;
     return;
   }
-  for (i = 0; token; ++i) {
+
+  // loop through and assign each argument token to the respective args index position
+  for (i = 0; token != NULL; ++i) {
     args[i] = strdup(token);
-    int j;
-    for (j = 0; args[i][j]; ++j) {
-      if (args[i][j] == '$' && args[i][j + 1] == '$') {
-        args[i][j + 1] = '\0';
-        args[i][j] = '\0';
-        strcat(args[i], pid);
-      }
-    }
-    //printf("token is: %s\n", token);
     token = strtok(NULL, " ");
   }
 }
@@ -150,7 +153,7 @@ void builtin_commands(char *args[512]) {
     int i;
     // get the list of all pid's
     int *processes = process_list(0);
-    // kill em all
+    // kill em all if they haven't terminated already
     for (i = 0; processes[i] != 0 ; ++i) {
       //printf("killing process id: %d\n", processes[i]);
       kill(processes[i], SIGTERM);
@@ -172,18 +175,17 @@ void builtin_commands(char *args[512]) {
   }
   
   // status built-in commmand
+  // code sourced from monitoring child processes exploration
   else if (strcmp(args[0], "status") == 0) {
     printf("Should print exit status here.\n");
     fflush(stdout);
-
+    
   }
 }
 
 void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
-  // Code is pretty much the same from the process api modules
-  // redirection code is from exploration: processes and i/o
+  // Code sourced from process api modules and exploration: processes and i/o
 
-  //printf("args are: %s\n", *args);
   pid_t spawnpid = -5;
   spawnpid = fork();
   switch (spawnpid) {
@@ -196,13 +198,13 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       // add the child pid to the counter/list
       process_list(spawnpid);
       // reset signal handlers for child processes
-      // will now default action for ctrl-C and ignore ctrl-Z
+      // set default action for ctrl-C and ignore ctrl-Z
       SIGINT_action.sa_handler = SIG_DFL;
       SIGTSTP_action.sa_handler = SIG_IGN;
       sigaction(SIGINT, &SIGINT_action, NULL);
       sigaction(SIGTSTP, &SIGTSTP_action, NULL);
       
-      // make sure the input file exists
+      // if the input file exists
       if (in_file != NULL) {
         // open the input file
         int sourceFD = open(in_file, O_RDONLY);
@@ -223,7 +225,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         fcntl(sourceFD, F_SETFD, FD_CLOEXEC);
       }
 
-      // make sure the output file exists
+      // if output file exists
       if (out_file != NULL) {
         // open the output file
         int targetFD = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -241,20 +243,46 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         }
         fcntl(targetFD, F_SETFD, FD_CLOEXEC);
       }
-      //printf("args[0] is: %s", args[0]);
-      //printf("args are: %s", *args);
-      execvp(args[0], (char*const*)args);
+      // execute the command
+      int execute = execvp(args[0], (char*const*)args);
+      if (execute == -1) {
+        perror("Error executing command.");
+        fflush(stderr);
+        exit(1);
+      }
+      return;
+    //default: // parent process waiting
+      //int childStatus;
+      
   }
 }
 
-void foreground_mode() {
-   
+void foreground_mode(int fg_mode) {
+  // must use write() here as signal handling is reentrant
+  // code from signal handling exploration
+  if (fg_mode == 0) {
+    char* message = "\nEntering foreground-only mode (& is now ignored)\n";
+    write(STDOUT_FILENO, message, 50);
+    fflush(stdout);
+    fg_mode = 1;
+  }
+  else if (fg_mode == 1) {
+    char* message = "\nExiting foreground-only mode\n";
+    write(STDOUT_FILENO, message, 30);
+    fflush(stdout);
+    fg_mode = 0;
+  }
+  else {
+    char* message = "\nError operating foreground-only mode\n";
+    write(STDOUT_FILENO, message, 38);
+    fflush(stdout);
+    return;
+  }
 }
 
-int exit_status(int status) {
-  int exit_value = 0;
-  return exit_value;
-}
+//void exit_status(int value) {
+  //int exit_value = value;
+//}
 
 int *process_list(pid_t pid) {
   static int list[2];
