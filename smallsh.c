@@ -17,7 +17,7 @@
 void parse_input(char *args[]);
 void builtin_commands(char* args[]);
 void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
-void foreground_mode(int fg_mode);
+void foreground_mode();
 int exit_status(int status);
 int *process_list(pid_t pid);
 
@@ -49,10 +49,8 @@ int main() {
   sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
   for (;;) {
-    // clear out the last input
+    // clear out the last input struct
     memset(inp, 0, sizeof(*inp));
-    //printf(": ");
-    fflush(stdout);
 
     // input gets tokenized into separate args
     parse_input(inp->args);
@@ -66,29 +64,35 @@ int main() {
     for (i = 0; inp->args[i] != NULL; ++i) {
       // find < in the args and denote the next argument as input file
       if (strcmp(inp->args[i], "<") == 0) {
-        inp->in_file = inp->args[i + 1];
-
-        // null the < and in_file after in_file has been set
-        inp->args[i] = NULL;
-        inp->args[i + 1] = NULL;
-        //printf("in file is: %s\n", inp->in_file);
+        inp->in_file = strdup(inp->args[i + 1]);
       }
+
       // find > in the args and denote the next argument as output file
       else if (strcmp(inp->args[i], ">") == 0) {
-        inp->out_file = inp->args[i + 1];
-
-        // null > and out_file after out_file has been set
-        inp->args[i] = NULL;
-        inp->args[i + 1] = NULL;
+        inp->out_file = strdup(inp->args[i + 1]);
       }
+
       // if & is found, flag as background process/set bg to 1
       // this only occurs if & is located at the end of the command
       else if (strcmp(inp->args[i], "&") == 0 && (inp->args[i + 1] == NULL)) {
         inp->bg = 1;
-        // null & after flagging as bg process
+        // null the & index position after flagging as bg process
         inp->args[i] = NULL;
       }
     }
+    // loop through and remove the <, >, in_file, and out_file from args
+    for (i = 0; inp->args[i] != NULL; ++i) {
+      if (strcmp(inp->args[i], "<") == 0) {
+        inp->args[i] = NULL;
+        inp->args[i + 1] = NULL;
+      }
+
+      else if (strcmp(inp->args[i], ">") == 0) {
+        inp->args[i] = NULL;
+        inp->args[i + 1] = NULL;
+      }
+    }
+
     // do nothing for blank input or a comment
     if (inp->args[0] == NULL || inp->args[0][0] == '#') {
       continue;
@@ -125,7 +129,7 @@ void parse_input(char *args[512]) {
   char pid[2048 - length];
   sprintf(pid, "%d", getpid());
 
-  // using strstr and memcpy for expansion per discord discussions
+  // using strstr and memcpy for expansion per class discord discussions
   char *exp = strstr(input, "$$");
   if (exp != NULL) {
     memcpy(exp, pid, strlen(pid) + 1);
@@ -186,7 +190,6 @@ void builtin_commands(char *args[512]) {
 
 void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code sourced from process api modules and exploration: processes and i/o
-  printf("checking bg state: bg is %d", bg);
   pid_t spawnpid = -5;
   spawnpid = fork();
   switch (spawnpid) {
@@ -253,13 +256,13 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         exit(1);
       }
       return;
-    //default: // parent process waiting
+    //default: // parent process
       //int childStatus;
       
   }
 }
 
-void foreground_mode(int fg_mode) {
+void foreground_mode() {
   // must use write() here as signal handling is reentrant
   // code from signal handling exploration
   if (fg_mode == 0) {
