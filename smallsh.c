@@ -25,7 +25,6 @@ int *process_list(pid_t pid);
 
 
 int fg_mode = 0;
-int exit_value = 0;
 
 
 int main() {
@@ -187,7 +186,7 @@ void builtin_commands(char *args[512]) {
   // status built-in commmand
   // code sourced from monitoring child processes exploration
   else if (strcmp(args[0], "status") == 0) {
-    printf("Exit value %d\n", exit_value);
+    printf("Status here");
     fflush(stdout); 
   }
 }
@@ -200,7 +199,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
     case -1:  // error if fork fails
       perror("Fork() failed.");
       fflush(stderr);
-      exit_value = 1;
       exit(1);
     case 0:  // execute child process
       // add the child pid to the counter/list
@@ -219,7 +217,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         if (sourceFD == -1) {
           perror("Input file open failed.");
           fflush(stderr);
-          exit_value = 1;
           //printf(": ");
           //fflush(stdout);
           exit(1);
@@ -229,7 +226,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         if (result == -1) {
           perror("Input file assignment failed.");
           fflush(stderr);
-          exit_value = 2;
           exit(2);
         }
         // from processes and i/o module
@@ -244,7 +240,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         if (targetFD == -1) {
           perror("Output file open failed.");
           fflush(stderr);
-          exit_value = 1;
           exit(1);
         }
         // redirect stdout to output file
@@ -252,7 +247,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         if (result == -1) {
           perror("Output file assignment failed.");
           fflush(stderr);
-          exit_value = 2;
           exit(2);
         }
         fcntl(targetFD, F_SETFD, FD_CLOEXEC);
@@ -263,7 +257,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       if (execute == -1) {
         perror("Error executing command.");
         fflush(stderr);
-        exit_value = 1;
         exit(1);
       }
     //default: // parent process
