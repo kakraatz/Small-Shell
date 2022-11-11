@@ -17,8 +17,9 @@
 
 
 void parse_input(char *args[]);
-void builtin_commands(char* args[]);
-void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
+void builtin_commands(char* args[], int child_status);
+void other_commands(char* args[], char *in_file, char *out_file, int bg, int status, struct sigaction, struct sigaction);
+void exit_status(int child_status);
 void foreground_mode();
 void foreground_on();
 void foreground_off();
@@ -34,6 +35,7 @@ int main() {
     char *in_file;
     char *out_file;
     int bg;
+    int status;
   };
 
   struct input *inp = malloc(sizeof *inp);
@@ -65,6 +67,9 @@ int main() {
     // background value initialized to 0
     // bg is 1 if & was the last argument
     inp->bg = 0;
+
+    // initialize the child/exit status to 0
+    inp->status = 0;
 
     // loop through the parsed arguments
     int i;
@@ -106,11 +111,11 @@ int main() {
     }
     // if command is exit, cd, or status, go to built-in commands
     if (strcmp(inp->args[0], "exit") == 0 || strcmp(inp->args[0], "cd") == 0 || strcmp(inp->args[0], "status") == 0) {
-      builtin_commands(inp->args);
+      builtin_commands(inp->args, inp->status);
     }
     // everything else gets forked
     else {
-      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg, SIGINT_action, SIGTSTP_action);
+      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg, inp->status, SIGINT_action, SIGTSTP_action);
     }
   }
   return 0;
@@ -138,8 +143,7 @@ void parse_input(char *args[512]) {
 
   // using strstr and memcpy for expansion per class discord discussions
   // note to grader: this is not working exactly to spec
-  // if there are more than 2 $$ in an argument, extraneous $'s are removed
-  // no time to fix it at this point
+  // if there are more than 2 $$ in an argument, extraneous $'s are removed from the argument
   char *exp = strstr(input, "$$");
   if (exp != NULL) {
     memcpy(exp, pid, strlen(pid) + 1);
@@ -162,7 +166,7 @@ void parse_input(char *args[512]) {
   }
 }
 
-void builtin_commands(char *args[512]) {
+void builtin_commands(char *args[512], int status) {
   // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
     int i;
@@ -192,15 +196,14 @@ void builtin_commands(char *args[512]) {
   // status built-in commmand
   // code sourced from monitoring child processes exploration
   else if (strcmp(args[0], "status") == 0) {
-    printf("Status here");
-    fflush(stdout); 
+    exit_status(status);
   }
 }
 
-void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
+void other_commands(char *args[512], char *in_file, char *out_file, int bg, int status, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code sourced from process api modules and exploration: processes and i/o
   pid_t spawnpid = -5;
-  int childStatus;
+  pid_t bg_pid;
   spawnpid = fork();
   switch (spawnpid) {
     case -1:  // error if fork fails
@@ -210,13 +213,14 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
     case 0:  // execute child process
       // add the child pid to the counter/list
       process_list(spawnpid);
-      // reset signal handlers for child processes
-      // set default action for ctrl-C and ignore ctrl-Z
+
+      // reset signal handlers for ctrl-C in child processes
+      // set default action for ctrl-C
       SIGINT_action.sa_handler = SIG_DFL;
       SIGTSTP_action.sa_handler = SIG_IGN;
       sigaction(SIGINT, &SIGINT_action, NULL);
       sigaction(SIGTSTP, &SIGTSTP_action, NULL);
-      
+
       // if the input file exists
       if (in_file != NULL) {
         // open the input file
@@ -268,11 +272,32 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       }
     default: // parent process
       // code sourced from monitoring child processes exploration
-      spawnpid = waitpid(spawnpid, &childStatus, WNOHANG);
-      printf("In the parent process waitpid returned value %d\n", spawnpid);
-    if (spawnpid != 0) {
-      printf("background pid %d is done: status/signal is %d\n", spawnpid, childStatus);
+      if (bg == 1 && fg_mode == 0) {
+        pid_t bgpid_val = waitpid(spawnpid, &status, WNOHANG);
+        printf("background pid is %d\n", spawnpid);
+        fflush(stdout);
+        bg_pid = spawnpid;
+      }
+      else {
+        pid_t bgpid_val = waitpid(spawnpid, &status, 0);
+      }
+      pid_t pid_val = waitpid(bg_pid, &status, WNOHANG);
+      if (pid_val > 0) {
+        printf("background pid %d is done: ", spawnpid);
+        fflush(stdout);
+        exit_status(status);
     }
+  }
+}
+
+void exit_status(int status) {
+  if (WIFEXITED(status)) {
+    printf("exit value %d\n", WEXITSTATUS(status));
+    fflush(stdout);
+  }
+  else {
+    printf("terminated by signal %d\n", WTERMSIG(status));
+    fflush(stdout);
   }
 }
 
