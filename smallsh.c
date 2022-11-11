@@ -194,6 +194,7 @@ void builtin_commands(char *args[512]) {
 void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code sourced from process api modules and exploration: processes and i/o
   pid_t spawnpid = -5;
+  int childStatus;
   spawnpid = fork();
   switch (spawnpid) {
     case -1:  // error if fork fails
@@ -259,9 +260,13 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         fflush(stderr);
         exit(1);
       }
-    //default: // parent process
-      //int childStatus;
-      
+    default: // parent process
+      // code sourced from monitoring child processes exploration
+      spawnpid = waitpid(spawnpid, &childStatus, WNOHANG);
+      printf("In the parent process waitpid returned value %d\n", spawnpid);
+    if (spawnpid != 0) {
+      printf("background pid %d is done: status/signal is %d", spawnpid, childStatus);
+    }
   }
 }
 
