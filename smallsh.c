@@ -17,9 +17,8 @@
 
 
 void parse_input(char *args[]);
-void builtin_commands(char* args[], int child_status);
-void other_commands(char* args[], char *in_file, char *out_file, int bg, int status, struct sigaction, struct sigaction);
-void exit_status(int child_status);
+void builtin_commands(char* args[], int status);
+void other_commands(char* args[], char *in_file, char *out_file, int bg, int *status, struct sigaction, struct sigaction);
 void foreground_mode();
 void foreground_on();
 void foreground_off();
@@ -115,7 +114,7 @@ int main() {
     }
     // everything else gets forked
     else {
-      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg, inp->status, SIGINT_action, SIGTSTP_action);
+      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg, &inp->status, SIGINT_action, SIGTSTP_action);
     }
   }
   return 0;
@@ -196,14 +195,22 @@ void builtin_commands(char *args[512], int status) {
   // status built-in commmand
   // code sourced from monitoring child processes exploration
   else if (strcmp(args[0], "status") == 0) {
-    exit_status(status);
+    if (WIFEXITED(status)) {
+      printf("exit value %d\n", WEXITSTATUS(status));
+      fflush(stdout);
+    }
+    else {
+      printf("terminated by signal %d\n", WTERMSIG(status));
+      fflush(stdout);
+    }
   }
 }
 
-void other_commands(char *args[512], char *in_file, char *out_file, int bg, int status, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
+void other_commands(char *args[512], char *in_file, char *out_file, int bg, int *status, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code sourced from process api modules and exploration: processes and i/o
   pid_t spawnpid = -5;
   pid_t bg_pid;
+  int childStatus;
   spawnpid = fork();
   switch (spawnpid) {
     case -1:  // error if fork fails
@@ -271,34 +278,34 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, int 
         exit(1);
       }
     default: // parent process
-      // code sourced from monitoring child processes exploration
+      // code sourced from monitoring child processes exploration and waitpid man pages
       if (bg == 1 && fg_mode == 0) {
-        pid_t bgpid_val = waitpid(spawnpid, &status, WNOHANG);
+        pid_t bgpid_val = waitpid(spawnpid, &childStatus, WNOHANG);
         printf("background pid is %d\n", spawnpid);
         fflush(stdout);
         bg_pid = spawnpid;
       }
       else {
-        pid_t bgpid_val = waitpid(spawnpid, &status, 0);
+        pid_t bgpid_val = waitpid(spawnpid, &childStatus, 0);
       }
-      pid_t pid_val = waitpid(bg_pid, &status, WNOHANG);
+      pid_t pid_val = waitpid(bg_pid, &childStatus, WNOHANG);
       if (pid_val > 0) {
         printf("background pid %d is done: ", spawnpid);
         fflush(stdout);
-        exit_status(status);
-    }
-  }
-}
-
-void exit_status(int status) {
-  if (WIFEXITED(status)) {
-    printf("exit value %d\n", WEXITSTATUS(status));
-    fflush(stdout);
-  }
-  else {
-    printf("terminated by signal %d\n", WTERMSIG(status));
-    fflush(stdout);
-  }
+        if (WIFEXITED(childStatus)) {
+          printf("exit value %d\n", WEXITSTATUS(childStatus));
+          fflush(stdout);
+        }
+        else {
+          printf("terminated by signal %d\n", WTERMSIG(childStatus));
+          fflush(stdout);
+        }
+        char *argv[] = {0};
+        argv[0] = "status";
+        status = &childStatus;
+        builtin_commands(argv, *status);
+      }
+   }
 }
 
 void foreground_mode() {
