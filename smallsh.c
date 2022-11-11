@@ -16,10 +16,11 @@
 
 void parse_input(char *args[]);
 void builtin_commands(char* args[]);
-void other_commands(char* args[], char *in_file, char *out_file, int bg);
-void handle_SIGINT();
-void handle_SIGTSTP();
-void check_background();
+void other_commands(char* args[], char *in_file, char *out_file, int bg, struct SIGINT_action, struct SIGTSTP_action);
+void child_process();
+struct sigaction handle_SIGINT();
+struct sigaction handle_SIGTSTP();
+void foreground_mode();
 int exit_status(int status);
 int *process_list(pid_t pid);
 
@@ -34,9 +35,9 @@ int main() {
   struct input *inp = malloc(sizeof *inp);
   
   // ctrl-C handler, ignores ctrl-C for parent/bg children
-  handle_SIGINT();
+  struct sigaction SIGINT_action = handle_SIGINT();
   // ctrl-Z handler, controls foreground-only mode
-  handle_SIGTSTP();
+  struct sigaction SIGTSTP_action = handle_SIGTSTP();
 
   for (;;) {
     // clear out the last input
@@ -73,7 +74,7 @@ int main() {
     }
     // everything else gets forked
     else {
-      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg);
+      other_commands(inp->args, inp->in_file, inp->out_file, inp->bg, SIGINT_action, SIGTSTP_action);
     }
   }
   return 0;
@@ -145,7 +146,7 @@ void builtin_commands(char *args[]) {
   }
 }
 
-void other_commands(char *args[], char *in_file, char *out_file, int bg) {
+void other_commands(char *args[], char *in_file, char *out_file, int bg, struct SIGINT_action, struct SIGTSTP_action) {
   //printf("Starting other command\n");
   //int i;
   //for (i = 0; args[i] != NULL; ++i) {
@@ -154,11 +155,30 @@ void other_commands(char *args[], char *in_file, char *out_file, int bg) {
   //printf("In-file is: %s\n", in_file);
   //printf("Out-file is: %s\n", out_file);
   //printf("Background flag is: %d\n", bg);
-  // this is pretty much straight from the course modules
-  
+  // Code is pretty much the same from the process api modules
+  // redirection code is from exploration: processes and i/o
+  pid_t spawnpid = -5;
+  spawnpid = fork();
+  switch (spawnpid) {
+    case -1:  // error if fork fails
+      perror("Error: fork() failed.");
+      fflush(stderr);
+      exit(1);
+      break;
+    case 0:  // execute child process
+      // add the child pid to the counter/list
+      process_list(spawnpid);
+      // reset signal handlers for child processes
+      SIGINT_action.sa_handler = SIG_DFL;
+      SIGTSTP_action.sa_handler = SIG_IGN;
+      sigaction(SIGINT, &SIGINT_action, NULL);
+      sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+
+
+  }
 }
 
-void handle_SIGINT() {
+struct sigaction handle_SIGINT() {
   // initialize SIGINT_action to empty
   struct sigaction SIGINT_action = {0};
   // register SIG_IGN as signal handler, ctrl-C is ignored
@@ -169,22 +189,24 @@ void handle_SIGINT() {
   SIGINT_action.sa_flags = 0;
   // install the signal handler
   sigaction(SIGINT, &SIGINT_action, NULL);
+  return SIGINT_action;
 }
 
-void handle_SIGTSTP() {
+struct sigaction handle_SIGTSTP() {
   // initialize SIGTSTP_action to empty
   struct sigaction SIGTSTP_action = {0};
-  // register check_background as handler, need to check bg status
-  SIGTSTP_action.sa_handler = check_background;
+  // register check_background as handler, need to check fg status
+  SIGTSTP_action.sa_handler = foreground_mode;
   // block catchable signals while running
   sigfillset(&SIGTSTP_action.sa_mask);
   // no flags set
   SIGTSTP_action.sa_flags = 0;
   // install the signal handler
   sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+  return SIGTSTP_action;
 }
 
-void check_background() {
+void foreground_mode() {
    
 }
 
