@@ -82,7 +82,8 @@ int main() {
         inp->args[i + 1] = NULL;
       }
       // if & is found, flag as background process/set bg to 1
-      else if (strcmp(inp->args[i], "&") == 0) {
+      // this only occurs if & is located at the end of the command
+      else if (strcmp(inp->args[i], "&") == 0 && (inp->args[i + 1] == NULL)) {
         inp->bg = 1;
         // null & after flagging as bg process
         inp->args[i] = NULL;
@@ -185,7 +186,7 @@ void builtin_commands(char *args[512]) {
 
 void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code sourced from process api modules and exploration: processes and i/o
-
+  printf("checking bg state: bg is %d", bg);
   pid_t spawnpid = -5;
   spawnpid = fork();
   switch (spawnpid) {
@@ -244,6 +245,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         fcntl(targetFD, F_SETFD, FD_CLOEXEC);
       }
       // execute the command
+      fflush(stdout);
       int execute = execvp(args[0], (char*const*)args);
       if (execute == -1) {
         perror("Error executing command.");
