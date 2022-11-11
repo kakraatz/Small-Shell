@@ -16,10 +16,10 @@
 
 void parse_input(char *args[]);
 void builtin_commands(char* args[]);
-void other_commands(char* args[], char *in_file, char *out_file, int bg, struct SIGINT_action, struct SIGTSTP_action);
+void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
 void child_process();
-struct sigaction handle_SIGINT();
-struct sigaction handle_SIGTSTP();
+void handle_SIGINT();
+void handle_SIGTSTP();
 void foreground_mode();
 int exit_status(int status);
 int *process_list(pid_t pid);
@@ -35,9 +35,29 @@ int main() {
   struct input *inp = malloc(sizeof *inp);
   
   // ctrl-C handler, ignores ctrl-C for parent/bg children
-  struct sigaction SIGINT_action = handle_SIGINT();
+  // taken from signals module exploration
+  // initialize SIGINT_action to empty
+  struct sigaction SIGINT_action = {0};
+  // register SIG_IGN as signal handler, ctrl-C is ignored
+  SIGINT_action.sa_handler = SIG_IGN;
+  // block catchable signals while running
+  sigfillset(&SIGINT_action.sa_mask);
+  // no flags set
+  SIGINT_action.sa_flags = 0;
+  // install the signal handler
+  sigaction(SIGINT, &SIGINT_action, NULL);
+
   // ctrl-Z handler, controls foreground-only mode
-  struct sigaction SIGTSTP_action = handle_SIGTSTP();
+  // initialize SIGTSTP_action to empty
+  struct sigaction SIGTSTP_action = {0};
+  // register check_background as handler, need to check fg status
+  SIGTSTP_action.sa_handler = foreground_mode;
+  // block catchable signals while running
+  sigfillset(&SIGTSTP_action.sa_mask);
+  // no flags set
+  SIGTSTP_action.sa_flags = 0;
+  // install the signal handler
+  sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
   for (;;) {
     // clear out the last input
@@ -146,22 +166,14 @@ void builtin_commands(char *args[]) {
   }
 }
 
-void other_commands(char *args[], char *in_file, char *out_file, int bg, struct SIGINT_action, struct SIGTSTP_action) {
-  //printf("Starting other command\n");
-  //int i;
-  //for (i = 0; args[i] != NULL; ++i) {
-    //printf("argument %d: %s\n", i, args[i]);
-  //}
-  //printf("In-file is: %s\n", in_file);
-  //printf("Out-file is: %s\n", out_file);
-  //printf("Background flag is: %d\n", bg);
+void other_commands(char *args[], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code is pretty much the same from the process api modules
   // redirection code is from exploration: processes and i/o
   pid_t spawnpid = -5;
   spawnpid = fork();
   switch (spawnpid) {
     case -1:  // error if fork fails
-      perror("Error: fork() failed.");
+      perror("Fork() failed.");
       fflush(stderr);
       exit(1);
       break;
@@ -169,41 +181,53 @@ void other_commands(char *args[], char *in_file, char *out_file, int bg, struct 
       // add the child pid to the counter/list
       process_list(spawnpid);
       // reset signal handlers for child processes
+      // will now default action for ctrl-C and ignore ctrl-Z
       SIGINT_action.sa_handler = SIG_DFL;
       SIGTSTP_action.sa_handler = SIG_IGN;
       sigaction(SIGINT, &SIGINT_action, NULL);
       sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+      
+      // make sure the input file exists
+      if (in_file != NULL) {
+        // open the input file
+        int sourceFD = open(in_file, O_RDONLY);
+        if (sourceFD == -1) {
+          perror("Input file open failed.");
+          fflush(stderr);
+          exit(1);
+        }
+        // redirect stdin to input file
+        int result = dup2(sourceFD, 0);
+        if (result == -1) {
+          perror("Input file assignment failed.");
+          fflush(stderr);
+          exit(2);
+        }
+        // from processes and i/o module
+        // sourcefd will close upon exec call
+        fcntl(sourceFD, F_SETFD, FD_CLOEXEC);
+      }
 
-
+      // make sure the output file exists
+      if (out_file != NULL) {
+        // open the output file
+        int targetFD = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (targetFD == -1) {
+          perror("Output file open failed.");
+          fflush(stderr);
+          exit(1);
+        }
+        // redirect stdout to output file
+        int result = dup2(targetFD, 1);
+        if (result == -1) {
+          perror("Output file assignment failed.");
+          fflush(stderr);
+          exit(2);
+        }
+        fcntl(targetFD, F_SETFD, FD_CLOEXEC);
+      }
+      execvp(args[0], args);
   }
-}
-
-struct sigaction handle_SIGINT() {
-  // initialize SIGINT_action to empty
-  struct sigaction SIGINT_action = {0};
-  // register SIG_IGN as signal handler, ctrl-C is ignored
-  SIGINT_action.sa_handler = SIG_IGN;
-  // block catchable signals while running
-  sigfillset(&SIGINT_action.sa_mask);
-  // no flags set
-  SIGINT_action.sa_flags = 0;
-  // install the signal handler
-  sigaction(SIGINT, &SIGINT_action, NULL);
-  return SIGINT_action;
-}
-
-struct sigaction handle_SIGTSTP() {
-  // initialize SIGTSTP_action to empty
-  struct sigaction SIGTSTP_action = {0};
-  // register check_background as handler, need to check fg status
-  SIGTSTP_action.sa_handler = foreground_mode;
-  // block catchable signals while running
-  sigfillset(&SIGTSTP_action.sa_mask);
-  // no flags set
-  SIGTSTP_action.sa_flags = 0;
-  // install the signal handler
-  sigaction(SIGTSTP, &SIGTSTP_action, NULL);
-  return SIGTSTP_action;
 }
 
 void foreground_mode() {
