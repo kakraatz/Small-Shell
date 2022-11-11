@@ -62,6 +62,8 @@ int main() {
   for (;;) {
     // clear out the last input
     memset(inp, 0, sizeof(*inp));
+    //printf(": ");
+    fflush(stdout);
     // send input to get tokenized into separate args
     parse_input(inp->args);
 
@@ -71,16 +73,21 @@ int main() {
       // find < in the args and denote the next argument as input file
       if (strcmp(inp->args[i], "<") == 0) {
         inp->in_file = inp->args[i + 1];
+        inp->args[i] = NULL;
+        inp->args[i + 1] = NULL;
         //printf("in file is: %s\n", inp->in_file);
       }
       // find > in the args and denote the next argument as output file
       else if (strcmp(inp->args[i], ">") == 0) {
         inp->out_file = inp->args[i + 1];
+        inp->args[i] = NULL;
+        inp->args[i + 1] = NULL;
         //printf("out file is: %s\n", inp->out_file);
       }
       // find & and flag as background process
       else if (strcmp(inp->args[i], "&") == 0) {
         inp->bg = 1;
+        inp->args[i] = NULL;
       }
     }
     //printf("bg value is: %d\n", inp->bg);
@@ -114,6 +121,7 @@ void parse_input(char *args[512]) {
 
   char pid[2048 - length];
   sprintf(pid, "%d", getpid());
+  //printf("pid is %s\n", pid);
 
   char *token;
   token = strtok(input, " ");
@@ -123,15 +131,20 @@ void parse_input(char *args[512]) {
   }
   for (i = 0; token; ++i) {
     args[i] = strdup(token);
-    if (args[i][0] == '$' && args[i][1] == '$') {
-      args[i] = pid;
+    int j;
+    for (j = 0; args[i][j]; ++j) {
+      if (args[i][j] == '$' && args[i][j + 1] == '$') {
+        args[i][j + 1] = '\0';
+        args[i][j] = '\0';
+        strcat(args[i], pid);
+      }
     }
     //printf("token is: %s\n", token);
     token = strtok(NULL, " ");
   }
 }
 
-void builtin_commands(char *args[]) {
+void builtin_commands(char *args[512]) {
   // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
     int i;
@@ -166,9 +179,11 @@ void builtin_commands(char *args[]) {
   }
 }
 
-void other_commands(char *args[], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
+void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
   // Code is pretty much the same from the process api modules
   // redirection code is from exploration: processes and i/o
+
+  //printf("args are: %s\n", *args);
   pid_t spawnpid = -5;
   spawnpid = fork();
   switch (spawnpid) {
@@ -226,7 +241,9 @@ void other_commands(char *args[], char *in_file, char *out_file, int bg, struct 
         }
         fcntl(targetFD, F_SETFD, FD_CLOEXEC);
       }
-      execvp(args[0], args);
+      //printf("args[0] is: %s", args[0]);
+      //printf("args are: %s", *args);
+      execvp(args[0], (char*const*)args);
   }
 }
 
