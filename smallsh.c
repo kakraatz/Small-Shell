@@ -217,13 +217,13 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       exit(1);
     case 0:  // execute child process
       // add the child pid to the counter/list
-      process_list(spawnpid);
+      //process_list(spawnpid);
 
-      // reset signal handler for ctrl-C in child processes to default action
+      // reset signal handler for SIGINT in child processes to default action
       SIGINT_action.sa_handler = SIG_DFL;
       sigaction(SIGINT, &SIGINT_action, NULL);
 
-      // using sigprocmask to control SIGTSTP action
+      // reset signal handler for SIGTSTP in child processes to ignore
       SIGTSTP_action.sa_handler = SIG_IGN;
       sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
@@ -277,38 +277,72 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
     default: // parent process
       // code sourced from monitoring child processes exploration
       if (bg == 1 && fg_mode == 0) {
-        pid_t bgpid_val = waitpid(spawnpid, &childStatus, WNOHANG);
+        //pid_t bgpid_val = waitpid(spawnpid, &childStatus, WNOHANG);
         printf("background pid is %d\n", spawnpid);
         fflush(stdout);
-        last_status = childStatus;
-        bg_pid = spawnpid;
+        //int *bg_list = process_list(spawnpid);
+        //int i;
+        //for (i = 0; bg_list[i] != 0; ++i) {
+        pid_t pid_val = waitpid(spawnpid, &childStatus, WNOHANG);
+        if (pid_val > 0) {
+          //printf("background pid %d is done: ", bg_list[i]);
+          fflush(stdout);
+          if (WIFEXITED(childStatus)) {
+            printf("exit value %d\n", WEXITSTATUS(childStatus));
+            fflush(stdout);
+          }
+          else {
+            printf("terminated by signal %d\n", WTERMSIG(childStatus));
+            fflush(stdout);
+          }
+          last_status = childStatus;
+        }
+        //}
       }
       else {
         pid_t bgpid_val = waitpid(spawnpid, &childStatus, 0);
         last_status = childStatus;
       }
-      pid_t pid_val = waitpid(bg_pid, &childStatus, WNOHANG);
+      //int i;
+      //for (i = 0; bg_list[i] > 0; ++i) {
+        //printf("bg pid[%d] is %d\n", i, bg_list[i]);
+        //pid_t pid_val = waitpid(bg_list[i], &childStatus, WNOHANG);
+        //printf("pid_val is %d\n", pid_val);
+        //if (pid_val > 0) {
+          //printf("background pid %d is done: ", bg_list[i]);
+          //fflush(stdout);
+          //if (WIFEXITED(childStatus)) {
+            //printf("exit value %d\n", WEXITSTATUS(childStatus));
+            //fflush(stdout);
+          //}
+          //else {
+            //printf("terminated by signal %d\n", WTERMSIG(childStatus));
+            //fflush(stdout);
+          //}
+          //last_status = childStatus;
+        //}
+      //}
+      //pid_t pid_val = waitpid(bg_pid, &childStatus, WNOHANG);
       // need to loop through process list here and check each one
-      if (pid_val > 0) {
-        printf("background pid %d is done: ", spawnpid);
-        fflush(stdout);
-        if (WIFEXITED(childStatus)) {
-          printf("exit value %d\n", WEXITSTATUS(childStatus));
-          fflush(stdout);
-        }
-        else {
-          printf("terminated by signal %d\n", WTERMSIG(childStatus));
-          fflush(stdout);
-        }
-        last_status = childStatus;
-      }
+      //if (pid_val > 0) {
+        //printf("background pid %d is done: ", spawnpid);
+        //fflush(stdout);
+        //if (WIFEXITED(childStatus)) {
+          //printf("exit value %d\n", WEXITSTATUS(childStatus));
+          //fflush(stdout);
+        //}
+        //else {
+          //printf("terminated by signal %d\n", WTERMSIG(childStatus));
+          //fflush(stdout);
+        //}
+        //last_status = childStatus;
+      //}
    }
 }
 
 void handle_SIGTSTP() {
-  // must use write() here as signal handling is reentrant
-  // code from signal handling exploration
-  // using sigprocmask in child process
+  // formatting this based on the signals ed post
+  // using sigprocmask
   if (fg_mode == 0) {
     fgmode_on();
   }
@@ -318,8 +352,7 @@ void handle_SIGTSTP() {
 }
 
 void fgmode_on() {
-  // must use write() here as signal handling is reentrant
-  // code from signal handling exploration
+  // code from signal handling exploration and signals ed post pseudocode
   fg_mode = 1;
   char* message = "\nEntering foreground-only mode (& is now ignored)\n";
   write(STDOUT_FILENO, message, 50);
@@ -327,8 +360,7 @@ void fgmode_on() {
 }
 
 void fgmode_off() {
-  // must use write() here as signal handling is reentrant
-  // code from signal handling exploration
+  // code from signal handling exploration and signals ed post pseudocode
   fg_mode = 0;
   char* message = "\nExiting foreground-only mode\n";
   write(STDOUT_FILENO, message, 30);
