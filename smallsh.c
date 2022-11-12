@@ -127,12 +127,11 @@ void parse_input(char *args[512]) {
   
   // check for any finished background processes before taking next input
   check_bg_processes();
-
+  
   // print the input indicator and flush
   printf(": ");
   fflush(stdout);
 
-  // using fgets per discord discussion
   // collecting stdin into input array
   fgets(input, 2048, stdin);
 
@@ -233,8 +232,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         sigaction(SIGINT, &SIGINT_action, NULL);
       }
 
-      // reset signal handler for SIGTSTP in child processes to ignore
-      //sigprocmask(SIG_SETMASK, &SIGTSTP_action.sa_mask, NULL);
+      //sigprocmask(SIG_BLOCK, &SIGTSTP_action.sa_mask, NULL);
 
       // if the input file exists
       if (in_file != NULL) {
