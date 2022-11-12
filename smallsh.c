@@ -52,7 +52,7 @@ int main() {
   sigaction(SIGINT, &SIGINT_action, NULL);
 
   // ctrl-Z handler, controls foreground-only mode
-  // using custom handler and sigprocmask per discord/ed discussions
+  // using custom handler and sigprocmask in child processes per discord/ed discussions
   struct sigaction SIGTSTP_action = {0};
   SIGTSTP_action.sa_handler = handle_SIGTSTP;
   sigfillset(&SIGTSTP_action.sa_mask);
@@ -146,12 +146,11 @@ void parse_input(char *args[512]) {
   sprintf(pid, "%d", getpid());
 
   // using strstr and memcpy for expansion per class discord discussions
-  // Note to grader: this is not working exactly to spec as I didn't want to
-  // copy the video that was posted on discord. If there are more than 2 $'s in
+  // Note to grader: this is not working exactly to spec. If there are more than 2 $'s in
   // an argument, extraneous $'s are removed from the argument
   char *exp = strstr(input, "$$");
   if (exp != NULL) {
-    memcpy(exp, pid, strlen(pid) + 1);
+    memcpy(exp, pid, strlen(pid));
   }
 
   // tokenize the input into individual arguments
@@ -179,10 +178,7 @@ void builtin_commands(char *args[512], int last_status) {
     int *processes = process_list(0);
     // kill them all if they haven't terminated already
     for (i = 0; i < 10 ; ++i) {
-      //printf("killing process id: %d\n", processes[i]);
-      if (processes[i] != 0) {
-        kill(processes[i], SIGTERM);
-      }
+      kill(processes[i], SIGTERM);
     }
     // clean exit after any/all processes are killed
     exit(0);
@@ -227,9 +223,6 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       fflush(stderr);
       exit(1);
     case 0:  // execute child process
-      // add the child pid to the counter/list
-      //process_list(spawnpid);
-
       // reset signal handler for SIGINT in child processes to default action
       // only applies to foreground child processes
       if (bg == 0) {
@@ -237,8 +230,10 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         sigaction(SIGINT, &SIGINT_action, NULL);
       }
 
-      // reset signal handler for SIGTSTP in child processes to ignore
+      // use sigprocmask to block SIGTSTP in child processes
       //sigprocmask(SIG_SETMASK, &SIGTSTP_action.sa_mask, NULL);
+      SIGTSTP_action.sa_handler = SIG_IGN;
+      sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
       // if the input file exists
       if (in_file != NULL) {
@@ -279,7 +274,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         }
         fcntl(targetFD, F_SETFD, FD_CLOEXEC);
       }
-      // execute the command
+      // execute the command, print an error if it fails
       fflush(stdout);
       int execute = execvp(args[0], (char*const*)args);
       if (execute == -1) {
@@ -288,33 +283,43 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         exit(1);
       }
     default: // parent process
+      // if bg is flagged and fg only mode is off
       if (bg == 1 && fg_mode == 0) {
+        // waitpid with WNOHANG so control is returned to the user
         pid_t bgpid_value = waitpid(spawnpid, &childStatus, WNOHANG);
         printf("background pid is %d\n", spawnpid);
         fflush(stdout);
+        // save the status value for status command
         last_status = childStatus;
+        // store the bg process id to periodically check for termination
         bg_pid = spawnpid;
         process_list(bg_pid);
       }
 
       else {
+        // running in foreground and witholding control from user until waitpid returns
         pid_t waitpid_value = waitpid(spawnpid, &childStatus, 0);
+        // save the status value for status command
         last_status = childStatus;
+        // if the fg child is terminated by a signal, display the signal number
         if (WIFSIGNALED(childStatus)) {
           printf("terminated by signal %d\n", WTERMSIG(childStatus));
         }
       }
+      // check for any exited/terminated bg processes
       check_bg_processes();
    }
 }
 
 void check_bg_processes() {
-  // exit status code sourced from monitoring child processes exploration
+  // code for exit status sourced from monitoring child processes exploration
   int i;
   int childStatus;
+  // get the stored bg pids and loop through them
   int *bg_list = process_list(0);
   for (i = 0; i < 10; ++i) {
     if (bg_list[i] != 0) {
+      // check for termination, get the exit status number, and print corresponding message
       pid_t bgpid_value = waitpid(bg_list[i], &childStatus, WNOHANG);
       if (bgpid_value > 0) {
         printf("background pid %d is done: ", bg_list[i]);
@@ -327,6 +332,7 @@ void check_bg_processes() {
           printf("terminated by signal %d\n", WTERMSIG(childStatus));
           fflush(stdout);
         }
+        // save the terminated bg ps status value for status command
         last_status = childStatus;
       }
     }
@@ -335,7 +341,7 @@ void check_bg_processes() {
 
 void handle_SIGTSTP() {
   // formatting this based on the signals ed post
-  // using sigprocmask
+  // controls foreground only mode
   if (fg_mode == 0) {
     fgmode_on();
   }
@@ -346,6 +352,7 @@ void handle_SIGTSTP() {
 
 void fgmode_on() {
   // code from signal handling exploration and signals ed post pseudocode
+  // switches to foreground-only mode and writes message
   fg_mode = 1;
   char* message = "\nEntering foreground-only mode (& is now ignored)\n";
   write(STDOUT_FILENO, message, 50);
@@ -354,6 +361,7 @@ void fgmode_on() {
 
 void fgmode_off() {
   // code from signal handling exploration and signals ed post pseudocode
+  // exits foreground-only mode and writes message
   fg_mode = 0;
   char* message = "\nExiting foreground-only mode\n";
   write(STDOUT_FILENO, message, 30);
