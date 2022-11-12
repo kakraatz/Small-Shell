@@ -19,6 +19,7 @@
 void parse_input(char *args[]);
 void builtin_commands(char* args[], int last_status);
 void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
+void check_bg_processes();
 void handle_SIGTSTP();
 void fgmode_on();
 void fgmode_off();
@@ -30,6 +31,7 @@ static int last_status = 0;
 
 
 int main() {
+  // initialize a struct to store input values
   struct input{
     char *args[512];
     char *in_file;
@@ -37,6 +39,7 @@ int main() {
     int bg;
   };
 
+  // allocate memory for the input struct
   struct input *inp = malloc(sizeof *inp);
   
   // ctrl-C handler, ignores ctrl-C for parent/bg children
@@ -49,7 +52,7 @@ int main() {
   sigaction(SIGINT, &SIGINT_action, NULL);
 
   // ctrl-Z handler, controls foreground-only mode
-  // using sigprocmask per discord/ed discussions
+  // using custom handler and sigprocmask per discord/ed discussions
   struct sigaction SIGTSTP_action = {0};
   SIGTSTP_action.sa_handler = handle_SIGTSTP;
   sigfillset(&SIGTSTP_action.sa_mask);
@@ -119,17 +122,22 @@ int main() {
 
 
 void parse_input(char *args[512]) {
+  // initialize array to store input from user
   char input[2048];
   int i;
+  
+  // check for any finished background processes before taking next input
+  check_bg_processes();
+
   // print the input indicator and flush
   printf(": ");
   fflush(stdout);
 
   // using fgets per discord discussion
-  // fgets collects stdin into input array
+  // collecting stdin into input array
   fgets(input, 2048, stdin);
 
-  // get the input length and set the last index character to \0 from \n
+  // get the input string length and set the last index character to \0 from \n
   int length = strlen(input);
   input[length - 1] = '\0';
 
@@ -169,10 +177,12 @@ void builtin_commands(char *args[512], int last_status) {
     int i;
     // get the list of all pid's
     int *processes = process_list(0);
-    // kill em all if they haven't terminated already
-    for (i = 0; processes[i] != 0 ; ++i) {
+    // kill them all if they haven't terminated already
+    for (i = 0; i < 10 ; ++i) {
       //printf("killing process id: %d\n", processes[i]);
-      kill(processes[i], SIGTERM);
+      if (processes[i] != 0) {
+        kill(processes[i], SIGTERM);
+      }
     }
     // clean exit after any/all processes are killed
     exit(0);
@@ -191,6 +201,7 @@ void builtin_commands(char *args[512], int last_status) {
   }
   
   // status built-in commmand
+  // built-in commands do not change status value
   // code sourced from monitoring child processes exploration
   else if (strcmp(args[0], "status") == 0) {
     if (WIFEXITED(last_status)) {
@@ -275,69 +286,46 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         exit(1);
       }
     default: // parent process
-      // code sourced from monitoring child processes exploration
       if (bg == 1 && fg_mode == 0) {
-        //pid_t bgpid_val = waitpid(spawnpid, &childStatus, WNOHANG);
+        pid_t bgpid_value = waitpid(spawnpid, &childStatus, WNOHANG);
         printf("background pid is %d\n", spawnpid);
         fflush(stdout);
-        //int *bg_list = process_list(spawnpid);
-        //int i;
-        //for (i = 0; bg_list[i] != 0; ++i) {
-        pid_t pid_val = waitpid(spawnpid, &childStatus, WNOHANG);
-        if (pid_val > 0) {
-          //printf("background pid %d is done: ", bg_list[i]);
-          fflush(stdout);
-          if (WIFEXITED(childStatus)) {
-            printf("exit value %d\n", WEXITSTATUS(childStatus));
-            fflush(stdout);
-          }
-          else {
-            printf("terminated by signal %d\n", WTERMSIG(childStatus));
-            fflush(stdout);
-          }
-          last_status = childStatus;
-        }
-        //}
+        last_status = childStatus;
+        bg_pid = spawnpid;
+        process_list(bg_pid);
       }
+
       else {
-        pid_t bgpid_val = waitpid(spawnpid, &childStatus, 0);
+        pid_t waitpid_value = waitpid(spawnpid, &childStatus, 0);
         last_status = childStatus;
       }
-      //int i;
-      //for (i = 0; bg_list[i] > 0; ++i) {
-        //printf("bg pid[%d] is %d\n", i, bg_list[i]);
-        //pid_t pid_val = waitpid(bg_list[i], &childStatus, WNOHANG);
-        //printf("pid_val is %d\n", pid_val);
-        //if (pid_val > 0) {
-          //printf("background pid %d is done: ", bg_list[i]);
-          //fflush(stdout);
-          //if (WIFEXITED(childStatus)) {
-            //printf("exit value %d\n", WEXITSTATUS(childStatus));
-            //fflush(stdout);
-          //}
-          //else {
-            //printf("terminated by signal %d\n", WTERMSIG(childStatus));
-            //fflush(stdout);
-          //}
-          //last_status = childStatus;
-        //}
-      //}
-      //pid_t pid_val = waitpid(bg_pid, &childStatus, WNOHANG);
-      // need to loop through process list here and check each one
-      //if (pid_val > 0) {
-        //printf("background pid %d is done: ", spawnpid);
-        //fflush(stdout);
-        //if (WIFEXITED(childStatus)) {
-          //printf("exit value %d\n", WEXITSTATUS(childStatus));
-          //fflush(stdout);
-        //}
-        //else {
-          //printf("terminated by signal %d\n", WTERMSIG(childStatus));
-          //fflush(stdout);
-        //}
-        //last_status = childStatus;
-      //}
+      check_bg_processes();
    }
+}
+
+void check_bg_processes() {
+  // exit status code sourced from monitoring child processes exploration
+  int i;
+  int childStatus;
+  int *bg_list = process_list(0);
+  for (i = 0; i < 10; ++i) {
+    if (bg_list[i] != 0) {
+      pid_t bgpid_value = waitpid(bg_list[i], &childStatus, WNOHANG);
+      if (bgpid_value > 0) {
+        printf("background pid %d is done: ", bg_list[i]);
+        fflush(stdout);
+        if (WIFEXITED(childStatus)) {
+          printf("exit value %d\n", WEXITSTATUS(childStatus));
+          fflush(stdout);
+        }
+        else {
+          printf("terminated by signal %d\n", WTERMSIG(childStatus));
+          fflush(stdout);
+        }
+        last_status = childStatus;
+      }
+    }
+  }
 }
 
 void handle_SIGTSTP() {
@@ -368,11 +356,13 @@ void fgmode_off() {
 }
 
 int *process_list(pid_t pid) {
-  // storing an array of the pids of forked processes
-  static int list[2];
+  // storing an array of the non-zero pids of background processes
+  static int list[10];
   static int count = 0;
+  if (pid != 0) {
   // add the pid to the list, increment pid counter, spit back the list
-  list[count] = pid;
-  ++count;
+    list[count] = pid;
+    ++count;
+  }
   return list;
 }
