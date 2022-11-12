@@ -42,7 +42,7 @@ int main() {
   // allocate memory for the input struct
   struct input *inp = malloc(sizeof *inp);
   
-  // ctrl-C handler, ignores ctrl-C for parent/bg children
+  // SIGINT handler, ignores SIGINT for parent/bg children
   // taken from signals module exploration
   // using SIG_IGN per ed discussions
   struct sigaction SIGINT_action = {0};
@@ -231,12 +231,14 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       //process_list(spawnpid);
 
       // reset signal handler for SIGINT in child processes to default action
-      SIGINT_action.sa_handler = SIG_DFL;
-      sigaction(SIGINT, &SIGINT_action, NULL);
+      // only applies to foreground child processes
+      if (bg == 0) {
+        SIGINT_action.sa_handler = SIG_DFL;
+        sigaction(SIGINT, &SIGINT_action, NULL);
+      }
 
       // reset signal handler for SIGTSTP in child processes to ignore
-      SIGTSTP_action.sa_handler = SIG_IGN;
-      sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+      //sigprocmask(SIG_SETMASK, &SIGTSTP_action.sa_mask, NULL);
 
       // if the input file exists
       if (in_file != NULL) {
@@ -298,6 +300,9 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
       else {
         pid_t waitpid_value = waitpid(spawnpid, &childStatus, 0);
         last_status = childStatus;
+        if (WIFSIGNALED(childStatus)) {
+          printf("terminated by signal %d\n", WTERMSIG(childStatus));
+        }
       }
       check_bg_processes();
    }
