@@ -19,6 +19,8 @@
 void parse_input(char *args[]);
 void builtin_commands(char* args[], int last_status);
 void other_commands(char* args[], char *in_file, char *out_file, int bg, struct sigaction, struct sigaction);
+void input_redirect(char *in_file, int bg);
+void output_redirect(char *out_file, int bg);
 void check_bg_processes();
 void handle_SIGTSTP();
 void fgmode_on();
@@ -26,11 +28,13 @@ void fgmode_off();
 int *process_list(pid_t pid);
 
 
-static int fg_mode = 0;
+static int fg_mode;
 static int last_status = 0;
 
 
+
 int main() {
+
   // initialize a struct to store input values
   struct input{
     char *args[512];
@@ -42,7 +46,7 @@ int main() {
   // allocate memory for the input struct
   struct input *inp = malloc(sizeof *inp);
   
-  // SIGINT handler, ignores SIGINT for parent/bg children
+  // ignore SIGINT for parent/bg children
   // taken from signals module exploration
   struct sigaction SIGINT_action = {0};
   SIGINT_action.sa_handler = SIG_IGN;
@@ -50,17 +54,24 @@ int main() {
   SIGINT_action.sa_flags = 0;
   sigaction(SIGINT, &SIGINT_action, NULL);
 
-  // ctrl-Z handler, controls foreground-only mode
-  // using custom handler, and sigprocmask per discord/ed discussions
+  // control foreground-only mode using custom handler
   struct sigaction SIGTSTP_action = {0};
   SIGTSTP_action.sa_handler = handle_SIGTSTP;
   sigfillset(&SIGTSTP_action.sa_mask);
   SIGTSTP_action.sa_flags = 0;
   sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+  
+  // initialize SIGTSTP to be blocked and set foreground-only mode off
+  // using sigprocmask per stickied signals ed discussion post
+  sigprocmask(SIG_BLOCK, NULL, &SIGTSTP_action.sa_mask);
+  fg_mode = 0;
 
   for (;;) {
     // clear out the last input struct
     memset(inp, 0, sizeof(*inp));
+
+    // unblock SIGTSTP
+    sigprocmask(SIG_UNBLOCK, NULL, &SIGTSTP_action.sa_mask);
 
     // input gets tokenized into separate args
     parse_input(inp->args);
@@ -121,6 +132,7 @@ int main() {
 
 
 void parse_input(char *args[512]) {
+
   // initialize array to store input from user
   char input[2048];
   int i;
@@ -168,7 +180,9 @@ void parse_input(char *args[512]) {
   }
 }
 
+
 void builtin_commands(char *args[512], int last_status) {
+
   // exit built-in command
   if (strcmp(args[0], "exit") == 0) {
     int i;
@@ -211,18 +225,24 @@ void builtin_commands(char *args[512], int last_status) {
   }
 }
 
+
 void other_commands(char *args[512], char *in_file, char *out_file, int bg, struct sigaction SIGINT_action, struct sigaction SIGTSTP_action) {
+
   // Code sourced from process api modules and exploration: processes and i/o
   pid_t spawnpid = -5;
   pid_t bg_pid;
   int childStatus;
+
+  // fork child
   spawnpid = fork();
+
   switch (spawnpid) {
     case -1:
       // error if fork fails
       perror("Fork() failed.");
       fflush(stderr);
       exit(1);
+
     case 0:
       // execute child process
       // reset signal handler for SIGINT in child processes to default action
@@ -231,48 +251,15 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         SIGINT_action.sa_handler = SIG_DFL;
         sigaction(SIGINT, &SIGINT_action, NULL);
       }
+      
+      // block SIGTSTP for all children processes
+      sigprocmask(SIG_BLOCK, NULL, &SIGTSTP_action.sa_mask);
+      
+      // process input/output redirection
+      input_redirect(in_file, bg);
+      
+      output_redirect(out_file, bg);
 
-      //sigprocmask(SIG_BLOCK, &SIGTSTP_action.sa_mask, NULL);
-
-      // if the input file exists
-      if (in_file != NULL) {
-        // open the input file
-        int sourceFD = open(in_file, O_RDONLY);
-        if (sourceFD == -1) {
-          perror("Input file open failed.");
-          fflush(stderr);
-          exit(1);
-        }
-        // redirect stdin to input file
-        int result = dup2(sourceFD, 0);
-        if (result == -1) {
-          perror("Input file assignment failed.");
-          fflush(stderr);
-          exit(2);
-        }
-        // from processes and i/o module
-        // sourcefd will close upon exec call
-        fcntl(sourceFD, F_SETFD, FD_CLOEXEC);
-      }
-
-      // if output file exists
-      if (out_file != NULL) {
-        // open the output file
-        int targetFD = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (targetFD == -1) {
-          perror("Output file open failed.");
-          fflush(stderr);
-          exit(1);
-        }
-        // redirect stdout to output file
-        int result = dup2(targetFD, 1);
-        if (result == -1) {
-          perror("Output file assignment failed.");
-          fflush(stderr);
-          exit(2);
-        }
-        fcntl(targetFD, F_SETFD, FD_CLOEXEC);
-      }
       // execute the command, print error if it fails
       fflush(stdout);
       int execute = execvp(args[0], (char*const*)args);
@@ -281,6 +268,7 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
         fflush(stderr);
         exit(1);
       }
+
     default:
       // parent process
       // if bg is flagged and fg only mode is off
@@ -311,7 +299,66 @@ void other_commands(char *args[512], char *in_file, char *out_file, int bg, stru
    }
 }
 
+
+void input_redirect(char *in_file, int bg) {
+
+  // if input redirection has not been specified in bg process, use /dev/null for input
+  if (bg == 1 && in_file == NULL) {
+    in_file = "/dev/null";
+  }
+  // otherwise redirect with the given input file
+  else if (in_file != NULL) {
+    // open the input file, display error if opening fails
+    int sourceFD = open(in_file, O_RDONLY);
+    if (sourceFD == -1) {
+      perror("Input file open failed.");
+      fflush(stderr);
+      exit(1);
+    }
+    // redirect stdin to input file, display error if redirection fails
+    int result = dup2(sourceFD, 0);
+    if (result == -1) {
+      perror("Input file assignment failed.");
+      fflush(stderr);
+      exit(2);
+    }
+    // from processes and i/o module
+    // close file upon exec call
+    fcntl(sourceFD, F_SETFD, FD_CLOEXEC);
+  }
+}
+
+
+void output_redirect(char *out_file, int bg) {
+
+  // if output redirection has not been specified in bg process, use /dev/null for output
+  if (bg == 1 && out_file == NULL) {
+    out_file = "/dev/null";
+  }
+  // otherwise redirect with the given output file
+  else if (out_file != NULL) {
+    // open the output file, display error if opening fails
+    int targetFD = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (targetFD == -1) {
+      perror("Output file open failed.");
+      fflush(stderr);
+      exit(1);
+    }
+    // redirect stdout to output file, display error if redirection fails
+    int result = dup2(targetFD, 1);
+    if (result == -1) {
+      perror("Output file assignment failed.");
+      fflush(stderr);
+      exit(2);
+    }
+    // close file upon exec call
+    fcntl(targetFD, F_SETFD, FD_CLOEXEC);
+  }
+}
+
+
 void check_bg_processes() {
+
   // code for exit status sourced from monitoring child processes exploration
   int i;
   int childStatus;
@@ -334,12 +381,16 @@ void check_bg_processes() {
         }
         // save the terminated bg ps status value for status command
         last_status = childStatus;
+        // remove the pid from the list upon bg ps termination
+        process_list(bg_list[i]);
       }
     }
   }
 }
 
+
 void handle_SIGTSTP() {
+
   // formatting this based on the signals ed post
   // controls foreground-only mode
   if (fg_mode == 0) {
@@ -350,8 +401,9 @@ void handle_SIGTSTP() {
   }
 }
 
+
 void fgmode_on() {
-  // code from signal handling exploration and signals ed post pseudocode
+
   // enters foreground-only mode and writes notification message
   fg_mode = 1;
   char* message = "\nEntering foreground-only mode (& is now ignored)\n";
@@ -359,8 +411,9 @@ void fgmode_on() {
   fflush(stdout);
 }
 
+
 void fgmode_off() {
-  // code from signal handling exploration and signals ed post pseudocode
+
   // exits foreground-only mode and writes notification message
   fg_mode = 0;
   char* message = "\nExiting foreground-only mode\n";
@@ -368,10 +421,21 @@ void fgmode_off() {
   fflush(stdout);
 }
 
+
 int *process_list(pid_t pid) {
-  // storing an array of the non-zero pids of background processes
+
+  // initialize an array for storing the non-zero pids of background processes
   static int list[10];
   static int count = 0;
+  int i;
+  // when a pid is terminated, check_bg_processes will send the terminated pid back
+  // and that index position in the list is reset
+  for (i = 0; i < 10; ++i) {
+    if (pid == list[i]) {
+      list[i] = 0;
+      count = i;
+    }
+  }
   if (pid != 0) {
   // add the pid to the list, increment pid counter, return the list
     list[count] = pid;
@@ -379,3 +443,4 @@ int *process_list(pid_t pid) {
   }
   return list;
 }
+
